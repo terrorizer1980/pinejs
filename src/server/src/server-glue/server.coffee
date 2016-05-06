@@ -3,7 +3,6 @@ Pinejs = require './module.coffee'
 Promise = require 'bluebird'
 sbvrUtils = require '../sbvr-api/sbvr-utils.coffee'
 passportPinejs = require '../passport-pinejs/passport-pinejs.coffee'
-PinejsSessionStore = require '../pinejs-session-store/pinejs-session-store.coffee'
 
 express = require 'express'
 
@@ -36,7 +35,7 @@ if !process.browser
 	app.use(methodOverride())
 	app.use(expressSession(
 		secret: 'A pink cat jumped over a rainbow'
-		store: new PinejsSessionStore()
+		store: new Pinejs.SessionStore()
 	))
 	app.use(passport.initialize())
 	app.use(passport.session())

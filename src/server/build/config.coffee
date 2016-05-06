@@ -53,7 +53,6 @@ module.exports =
 			'database-layer': root + '/src/server/src/database-layer'
 			'express-emulator': root + '/src/server/src/express-emulator'
 			'migrator': root + '/src/server/src/migrator'
-			'pinejs-session-store': root + '/src/server/src/pinejs-session-store'
 			'passport-pinejs': root + '/src/server/src/passport-pinejs'
 			'server-glue': root + '/src/server/src/server-glue'
 			'sbvr-api': root + '/src/server/src/sbvr-api'

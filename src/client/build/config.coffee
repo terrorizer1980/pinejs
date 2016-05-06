@@ -43,7 +43,6 @@ module.exports =
 			'data-server': root + '/src/server/src/data-server'
 			'database-layer': root + '/src/server/src/database-layer'
 			'migrator': root + '/src/server/src/migrator'
-			'pinejs-session-store': root + '/src/server/src/pinejs-session-store'
 			'passport-pinejs': root + '/src/server/src/passport-pinejs'
 			'server-glue': root + '/src/server/src/server-glue/server.coffee'
 			'sbvr-api': root + '/src/server/src/sbvr-api'

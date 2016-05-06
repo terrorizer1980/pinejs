@@ -12,6 +12,7 @@
     "@resin/lf-to-abstract-sql": "~0.0.14",
     "@resin/odata-parser": "~0.1.8",
     "@resin/odata-to-abstract-sql": "~0.3.3",
+    "@resin/pinejs-session-store": "^1.0.1",
     "@resin/sbvr-parser": "~0.0.18",
     "@resin/sbvr-types": "^1.0.0",
     "bluebird": "^3.0.6",

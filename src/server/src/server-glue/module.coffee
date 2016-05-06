@@ -18,7 +18,7 @@ sbvrServer = require '../data-server/SBVRServer.coffee'
 transactions = require '../http-transactions/transactions.coffee'
 configLoader = require '../config-loader/config-loader.coffee'
 migrator = require '../migrator/migrator.coffee'
-PinejsSessionStore = require '../pinejs-session-store/pinejs-session-store.coffee'
+PinejsSessionStore = require '@resin/pinejs-session-store'
 
 if dbModule.websql?
 	databaseOptions =
