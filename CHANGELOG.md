@@ -1,3 +1,4 @@
+* Converted src/server/src/server-glue/module.coffee to typescript.
 * Added support for typescript within pinejs.
 * Use PATCH rather than PUT to update models to avoid issues with db layers that don't support `SET x = DEFAULT`
 * Use null-loader for pg/lib/connection-parameters in browser builds to avoid a webpack warning.
