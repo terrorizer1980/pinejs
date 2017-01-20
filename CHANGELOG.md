@@ -1,3 +1,5 @@
+* Updated lf-to-abstract-sql to ^1.0.0 - changing how field names are generated to include the verb when it is not 'has'.
+
 v4.0.0
 
 * Changed permission name to text, to allow unlimited length permissions

@@ -68,7 +68,7 @@ prettifyConstraintError = (err, tableName) ->
 					# We know it's the right error type, so if matches exists just throw a generic error message, since we have failed to get the info for a more specific one.
 					if !matches?
 						throw new db.UniqueConstraintError('Unique key constraint violated')
-			throw new db.UniqueConstraintError('"' + matches[1] + '" must be unique.'.replace(/-/g, '__') + '.')
+			throw new db.UniqueConstraintError('"' + matches[1] + '" must be unique.'.replace(/-/g, '__').replace(/\ /g, '_') + '.')
 
 		if err instanceof db.ForeignKeyConstraintError
 			switch db.engine
@@ -229,13 +229,13 @@ exports.executeModels = executeModels = (tx, models, callback) ->
 				options:
 					select: 'id'
 					filter:
-						vocabulary: model.vocab
+						is_of__vocabulary: model.vocab
 						model_type: modelType
 			.then (result) ->
 				method = 'POST'
 				uri = '/dev/model'
 				body =
-					vocabulary: model.vocab
+					is_of__vocabulary: model.vocab
 					model_value: modelText
 					model_type: modelType
 				id = result[0]?.id
@@ -316,7 +316,7 @@ exports.deleteModel = (vocabulary, callback) ->
 					req: permissions.root
 				options:
 					filter:
-						vocabulary: vocabulary
+						is_of__vocabulary: vocabulary
 		])).then ->
 			tx.end()
 			cleanupModel(vocabulary)
@@ -915,6 +915,6 @@ exports.setup = (app, _db, callback) ->
 			console.error('Could not execute standard models', err, err.stack)
 			process.exit(1)
 	.then ->
-		db.executeSql('CREATE UNIQUE INDEX "uniq_model_model_type_vocab" ON "model" ("vocabulary", "model type");')
+		db.executeSql('CREATE UNIQUE INDEX "uniq_model_model_type_vocab" ON "model" ("is_of__vocabulary", "model type");')
 		.catch -> # we can't use IF NOT EXISTS on all dbs, so we have to ignore the error raised if this index already exists
 	.nodeify(callback)

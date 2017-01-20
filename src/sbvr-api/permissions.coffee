@@ -375,12 +375,12 @@ exports.setup = (app, sbvrUtils) ->
 					resource: 'api_key'
 					passthrough: req: rootRead
 					options:
-						select: 'actor'
+						select: 'is_of__actor'
 						filter: key: req.apiKey.key
 				.then (apiKeys) ->
 					if apiKeys.length is 0
 						throw new Error('API key is not linked to a actor?!')
-					apiKeyActorID = apiKeys[0].actor.__id
+					apiKeyActorID = apiKeys[0].is_of__actor.__id
 					return _checkPermissions(apiKeyPermissions, apiKeyActorID)
 				.catch (err) ->
 					authApi.logger.error('Error checking api key permissions', req.apiKey.key, err, err.stack)
