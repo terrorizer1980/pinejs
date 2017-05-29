@@ -6,20 +6,19 @@ import * as _passport from 'passport'
 import * as Promise from 'bluebird'
 const permissions = require('../sbvr-api/permissions')
 
-exports.config = {
-	models: [{
-		customServerCode: exports
-	}]
-}
-exports.setup = (app: _express.Application, sbvrUtils: any) => {
-	const checkPassword: _passportLocal.VerifyFunction = exports.checkPassword = (username: string, password: string, done: (error: undefined, user?: false | any) => void): void =>
-		permissions.checkPassword(username, password)
-		.catchReturn(false)
-		.asCallback(done)
+// Takes a fn with signature (req, res, next, err, user) - a standard express signature with the addition of the err/user entries.
+// And returns a middleware that will handle logging in using `username` and `password` body properties
+export let login: (fn: (err: any, user: {} | undefined, req: _express.Request, res: _express.Response, next: _express.NextFunction) => void) => _express.RequestHandler
 
-	let login: (fn: (err: any, user: {} | undefined, req: _express.Request, res: _express.Response, next: _express.NextFunction) => void) => _express.RequestHandler
-	let logout: _express.RequestHandler
+// Returns a middleware that logs the user out and then calls next()
+export let logout: _express.RequestHandler
 
+export const checkPassword: _passportLocal.VerifyFunction = (username, password, done: (error: undefined, user?: false | any) => void) =>
+	permissions.checkPassword(username, password)
+	.catchReturn(false)
+	.asCallback(done)
+
+const setup = (app: _express.Application, sbvrUtils: any) => {
 	if (!process.browser) {
 		const passport: typeof _passport = require('passport')
 		app.use(passport.initialize())
@@ -76,10 +75,11 @@ exports.setup = (app: _express.Application, sbvrUtils: any) => {
 			next()
 		}
 	}
-	// Takes a fn with signature (req, res, next, err, user) - a standard express signature with the addition of the err/user entries.
-	// And returns a middleware that will handle logging in using `username` and `password` body properties
-	exports.login = login
-	// Returns a middleware that logs the user out and then calls next()
-	exports.logout = logout
 	return Promise.resolve()
+}
+
+export const config = {
+	models: [{
+		customServerCode: { setup }
+	}]
 }
