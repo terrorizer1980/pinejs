@@ -1,8 +1,4 @@
-declare var require: any
-declare var process: any
-declare var global: any
-declare var nodeRequire: any
-declare var module: any
+///<reference path='./global-ext.d.ts' />
 
 import * as _express from 'express'
 
@@ -22,7 +18,7 @@ if (!process.browser) {
 	}
 	// Register a .sbvr loader
 	const fs = require('fs')
-	nodeRequire.extensions['.sbvr'] = (module: any, filename: string) =>
+	nodeRequire.extensions['.sbvr'] = (module: NodeModule, filename: string) =>
 		module.exports = fs.readFileSync(filename, { encoding: 'utf8' })
 
 	// Register the .ometajs loader
