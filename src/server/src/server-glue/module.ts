@@ -27,10 +27,11 @@ if (!process.browser) {
 
 import * as Promise from 'bluebird'
 const dbModule = require('../database-layer/db')
-const sbvrUtils = require('../sbvr-api/sbvr-utils')
 const configLoader = require('../config-loader/config-loader')
 const migrator = require('../migrator/migrator')
-const PinejsSessionStore = require('../pinejs-session-store/pinejs-session-store')
+
+export const sbvrUtils = require('../sbvr-api/sbvr-utils')
+export const SessionStore = require('../pinejs-session-store/pinejs-session-store')
 
 let databaseOptions: {
 	engine: string,
@@ -61,7 +62,7 @@ else {
 
 const db = dbModule.connect(databaseOptions)
 
-const init = (app: _express.Application, config?: any) =>
+export const init = (app: _express.Application, config?: any) =>
 	(sbvrUtils.setup(app, db) as Promise<any>)
 	.then(() => {
 		const cfgLoader = configLoader.setup(app)
@@ -86,5 +87,3 @@ const init = (app: _express.Application, config?: any) =>
 		console.error('Error initialising server', err, err.stack)
 		process.exit(1)
 	})
-
-module.exports = { init, sbvrUtils, SessionStore: PinejsSessionStore }
