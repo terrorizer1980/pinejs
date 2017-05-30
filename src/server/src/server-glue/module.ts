@@ -27,7 +27,7 @@ if (!process.browser) {
 
 import * as Promise from 'bluebird'
 const dbModule = require('../database-layer/db')
-const configLoader = require('../config-loader/config-loader')
+import * as configLoader from '../config-loader/config-loader'
 const migrator = require('../migrator/migrator')
 
 export const sbvrUtils = require('../sbvr-api/sbvr-utils')
@@ -62,7 +62,7 @@ else {
 
 const db = dbModule.connect(databaseOptions)
 
-export const init = (app: _express.Application, config?: any) =>
+export const init = (app: _express.Application, config?: configLoader.Config) =>
 	(sbvrUtils.setup(app, db) as Promise<any>)
 	.then(() => {
 		const cfgLoader = configLoader.setup(app)
