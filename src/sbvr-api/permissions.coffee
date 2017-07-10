@@ -186,7 +186,7 @@ exports.setup = (app, sbvrUtils) ->
 		if !_.isFinite(userId)
 			return Promise.rejected(new Error('User ID has to be numeric, got: ' + typeof userId))
 		permsFilter = $or:
-			user__has__permission: $any:
+			is_of__user: $any:
 				$alias: 'uhp'
 				$expr:
 					uhp: user: userId
@@ -194,11 +194,11 @@ exports.setup = (app, sbvrUtils) ->
 						uhp: expiry_date: null
 					,	uhp: expiry_date: $gt: $now: null
 					]
-			role__has__permission: $any:
+			is_of__role: $any:
 				$alias: 'rhp'
 				$expr: rhp: role: $any:
 					$alias: 'r'
-					$expr: r: user__has__role: $any:
+					$expr: r: is_of__user: $any:
 						$alias: 'uhr'
 						$expr:
 							uhr: user: userId
@@ -214,16 +214,16 @@ exports.setup = (app, sbvrUtils) ->
 			maxAge: env.apiKeys.permissionsCache.maxAge
 			fetchFn: (apiKey) ->
 				permsFilter = $or:
-					api_key__has__permission: $any:
+					is_of__api_key: $any:
 						$alias: 'khp'
 						$expr: khp: api_key: $any:
 							$alias: 'k'
 							$expr: k: key: apiKey
-					role__has__permission: $any:
+					is_of__role: $any:
 						$alias: 'rhp'
 						$expr: 'rhp': role: $any:
 							$alias: 'r'
-							$expr: r: api_key__has__role: $any:
+							$expr: r: is_of__api_key: $any:
 								$alias: 'khr'
 								$expr: khr: api_key: $any:
 									$alias: 'k'
