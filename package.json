@@ -11,10 +11,9 @@
   },
   "dependencies": {
     "@resin/abstract-sql-compiler": "^2.3.1",
-    "@resin/abstract-sql-to-odata-schema": "^1.0.0",
-    "@resin/lf-to-abstract-sql": "^1.0.0",
+    "@resin/lf-to-abstract-sql": "git+ssh://github.com:resin-io/lf-to-abstract-sql.git#verb-term-attr-names",
     "@resin/odata-parser": "~0.2.0",
-    "@resin/odata-to-abstract-sql": "^1.0.0",
+    "@resin/odata-to-abstract-sql": "git+https://github.com/resin-io-modules/odata-to-abstract-sql.git#verb-term-attrs",
     "@resin/sbvr-parser": "^0.1.0",
     "@resin/sbvr-types": "^1.0.0",
     "bluebird": "^3.5.0",

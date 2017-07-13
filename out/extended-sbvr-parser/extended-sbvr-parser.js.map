@@ -1,0 +1,10 @@
+{
+  "version": 3,
+  "file": "extended-sbvr-parser.js",
+  "sourceRoot": "../../src/extended-sbvr-parser/",
+  "sources": [
+    "extended-sbvr-parser.coffee"
+  ],
+  "names": [],
+  "mappings": ";AAAA;AAAA,MAAA;;EAAE,aAAe,OAAA,CAAQ,oBAAR;;EACjB,KAAA,GAAQ,OAAA,CAAQ,6BAAR;;EAER,MAAM,CAAC,OAAP,GAAiB,UAAU,CAAC,OAAX,CAChB;IAAA,UAAA,EAAY,SAAA;MACX,UAAU,CAAC,UAAU,CAAC,IAAtB,CAA2B,IAA3B;MACA,IAAC,CAAA,kBAAD,CAAoB,oBAApB;MACA,IAAC,CAAA,kBAAD,CAAoB,sBAApB;MACA,IAAC,CAAA,eAAD,CAAiB,KAAjB;AACA,aAAO;IALI,CAAZ;GADgB;AAHjB"
+}
