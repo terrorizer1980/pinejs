@@ -1,5 +1,9 @@
 _ = require 'lodash'
 Promise = require 'bluebird'
+Promise.config(
+	cancellation: true
+)
+
 LF2AbstractSQL = require '@resin/lf-to-abstract-sql'
 AbstractSQLCompiler = require '@resin/abstract-sql-compiler'
 PinejsClientCore = require 'pinejs-client/core'
@@ -628,6 +632,7 @@ exports.runURI = runURI =  (method, uri, body = {}, tx, req, custom, callback) -
 			delete body[k]
 
 	req =
+		on: _.noop
 		custom: custom
 		user: user
 		apiKey: apiKey
@@ -640,6 +645,7 @@ exports.runURI = runURI =  (method, uri, body = {}, tx, req, custom, callback) -
 
 	return new Promise (resolve, reject) ->
 		res =
+			on: _.noop
 			statusCode: 200
 			status: (@statusCode) ->
 				return this
@@ -655,8 +661,8 @@ exports.runURI = runURI =  (method, uri, body = {}, tx, req, custom, callback) -
 					reject(data)
 				else
 					resolve(data)
-			set: ->
-			type: ->
+			set: _.noop
+			type: _.noop
 
 		next = (route) ->
 			console.warn('Next called on a runURI?!', method, uri, route)
@@ -685,6 +691,13 @@ exports.handleODataRequest = handleODataRequest = (req, res, next) ->
 		method: req.method
 		vocabulary: apiRoot
 	)
+
+	req.on 'close', ->
+		handlePromise.cancel()
+		rollbackRequestHooks(reqHooks)
+	res.on 'close', ->
+		handlePromise.cancel()
+		rollbackRequestHooks(reqHooks)
 
 	req.tx?.on 'rollback', ->
 		rollbackRequestHooks(reqHooks)
