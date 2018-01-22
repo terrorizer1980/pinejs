@@ -2,15 +2,18 @@ Promise = require 'bluebird'
 { ODataParser } = require '@resin/odata-parser'
 { OData2AbstractSQL } = require '@resin/odata-to-abstract-sql'
 memoize = require 'memoizee'
+memoizeWeak = require 'memoizee/weak'
 _ = require 'lodash'
 { BadRequestError, ParsingError, TranslationError } = require './errors'
 deepFreeze = require 'deep-freeze'
+sbvrUtils = require './sbvr-utils'
+permissions = require './permissions'
 
 exports.BadRequestError = BadRequestError
 exports.ParsingError = ParsingError
 exports.TranslationError = TranslationError
 
-odata2AbstractSQL = {}
+# odata2AbstractSQL = {}
 
 # Converts a value to its string representation and tries to parse is as an
 # OData bind
@@ -34,24 +37,38 @@ memoizedParseOdata = do ->
 			# We deep clone to avoid mutations polluting the cache
 			return _.cloneDeep(_memoizedParseOdata(url))
 
+memoizedGetOData2AbstractSQL = memoize(
+	(abstractSqlModel) ->
+		odata2AbstractSQLx = OData2AbstractSQL.createInstance()
+		odata2AbstractSQLx.setClientModel(abstractSqlModel)
+		return odata2AbstractSQLx
+)
+
 
 memoizedOdata2AbstractSQL = do ->
-	_memoizedOdata2AbstractSQL = memoize(
-		(vocabulary, odataQuery, method, bodyKeys) ->
+	_memoizedOdata2AbstractSQL = memoizeWeak(
+		(abstractSqlModel, odataQuery, method, bodyKeys, existingBindVarsLength) ->
 			try
-				abstractSql = odata2AbstractSQL[vocabulary].match(odataQuery, 'Process', [method, bodyKeys])
-				# We deep freeze to prevent mutationsm, which would pollute the cache
+				odata2AbstractSQLx = memoizedGetOData2AbstractSQL(abstractSqlModel)
+				abstractSql =  odata2AbstractSQLx.match(odataQuery, 'Process', [method, bodyKeys, existingBindVarsLength])
+				# We deep freeze to prevent mutations, which would pollute the cache
 				deepFreeze(abstractSql)
-				return abstractSql
+				# return odata2AbstractSQL[vocabulary].match(odataQuery, 'Process', [method, bodyKeys])
 			catch e
+				if e instanceof permissions.PermissionError
+					throw e
 				console.error('Failed to translate url: ', JSON.stringify(odataQuery, null, '\t'), method, e, e.stack)
 				throw new TranslationError('Failed to translate url')
-		normalizer: JSON.stringify
+		normalizer: (abstractSqlModel, [ odataQuery, method, bodyKeys, existingBindVarsLength ]) ->
+			return JSON.stringify(odataQuery) + method + bodyKeys + existingBindVarsLength
 	)
-	return (vocabulary, odataQuery, method, body) ->
+	return (request) ->
+		{ method, odataQuery, odataBinds, values } = request
+		abstractSqlModel = sbvrUtils.getAbstractSqlModel(request)
 		# Sort the body keys to improve cache hits
-		{ tree, extraBodyVars } = _memoizedOdata2AbstractSQL(vocabulary, odataQuery, method, _.keys(body).sort())
-		_.assign(body, extraBodyVars)
+		{ tree, extraBodyVars, extraBindVars } = _memoizedOdata2AbstractSQL(abstractSqlModel, odataQuery, method, _.keys(values).sort(), odataBinds.length)
+		_.assign(values, extraBodyVars)
+		odataBinds.push(extraBindVars...)
 		return tree
 
 exports.metadataEndpoints = metadataEndpoints = ['$metadata', '$serviceroot']
@@ -137,7 +154,7 @@ parseODataChangeset = (env, b) ->
 splitApiRoot = (url) ->
 	url = url.split('/')
 	apiRoot = url[1]
-	if !apiRoot? or !odata2AbstractSQL[apiRoot]?
+	if !apiRoot? #or !odata2AbstractSQL[apiRoot]?
 		throw new ParsingError('No such api root: ' + apiRoot)
 	url = '/' + url[2...].join('/')
 	return { url: url, apiRoot: apiRoot }
@@ -151,34 +168,17 @@ mustExtractHeader = (body, header) ->
 exports.translateUri = (request) ->
 	if request.abstractSqlQuery?
 		return request
-	{ method, vocabulary, resourceName, odataBinds, odataQuery, values, custom, id, hooks, _defer } = request
-	isMetadataEndpoint = resourceName in metadataEndpoints or method is 'OPTIONS'
+	isMetadataEndpoint = request.resourceName in metadataEndpoints or request.method is 'OPTIONS'
 	if !isMetadataEndpoint
-		abstractSqlQuery = memoizedOdata2AbstractSQL(vocabulary, odataQuery, method, values)
-		return {
-			method
-			vocabulary
-			resourceName
-			odataBinds
-			odataQuery
-			abstractSqlQuery
-			values
-			custom
-			id
-			hooks
-			_defer
-		}
-	return {
-		method
-		vocabulary
-		resourceName
-		hooks
-		custom
-	}
+		abstractSqlQuery = memoizedOdata2AbstractSQL(request)
+		request = _.clone(request)
+		request.abstractSqlQuery = abstractSqlQuery
+		return request
+	return request
 
-exports.addClientModel = (vocab, clientModel) ->
-	odata2AbstractSQL[vocab] = OData2AbstractSQL.createInstance()
-	odata2AbstractSQL[vocab].setClientModel(clientModel)
+# exports.addClientModel = (vocab, clientModel) ->
+# 	odata2AbstractSQL[vocab] = OData2AbstractSQL.createInstance()
+# 	odata2AbstractSQL[vocab].setClientModel(clientModel)
 
-exports.deleteClientModel = (vocab, clientModel) ->
-	delete odata2AbstractSQL[vocab]
+# exports.deleteClientModel = (vocab, clientModel) ->
+# 	delete odata2AbstractSQL[vocab]

@@ -123,7 +123,7 @@ module.exports = (grunt) ->
 
 	for task of serverConfigs
 		grunt.registerTask task, [
-			'checkDependencies'
+			# 'checkDependencies'
 			'webpack:' + task
 			'gitinfo:describe'
 			'version'
@@ -136,7 +136,7 @@ module.exports = (grunt) ->
 
 	grunt.registerTask 'build', [
 		'clean'
-		'checkDependencies'
+		# 'checkDependencies'
 		'coffee'
 		'ts'
 		'copy'
