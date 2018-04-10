@@ -25,13 +25,7 @@ memoizedParseOdata = do ->
 		primitive: true
 	)
 	return (url) ->
-		if _.includes(url, '$')
-			# If we're doing a complex url then skip caching due to # of permutations
-			return parseOdata(url)
-		else
-			# Else if it's simple we can easily skip the parsing as we know we'll get a high % hit rate
-			# We deep clone to avoid mutations polluting the cache
-			return _.cloneDeep(_memoizedParseOdata(url))
+		return _.cloneDeep(_memoizedParseOdata(url))
 
 
 memoizedOdata2AbstractSQL = do ->
