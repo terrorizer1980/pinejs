@@ -1,9 +1,10 @@
 Promise = require 'bluebird'
 { ODataParser } = require '@resin/odata-parser'
 { OData2AbstractSQL } = require '@resin/odata-to-abstract-sql'
+AbstractSQLCompiler = require '@resin/abstract-sql-compiler'
 memoize = require 'memoizee'
 _ = require 'lodash'
-{ BadRequestError, ParsingError, TranslationError } = require './errors'
+{ BadRequestError, ParsingError, TranslationError, SqlCompilationError } = require './errors'
 
 exports.BadRequestError = BadRequestError
 exports.ParsingError = ParsingError
@@ -144,7 +145,7 @@ mustExtractHeader = (body, header) ->
 		throw new BadRequestError("#{header} must be specified")
 	return h
 
-exports.translateUri = (request) ->
+exports.translateUri = translateUri = (request) ->
 	if request.abstractSqlQuery?
 		return request
 	{ method, vocabulary, resourceName, odataBinds, odataQuery, values, custom, id, hooks, _defer } = request
@@ -158,6 +159,58 @@ exports.translateUri = (request) ->
 			odataBinds
 			odataQuery
 			abstractSqlQuery
+			values
+			custom
+			id
+			hooks
+			_defer
+		}
+	return {
+		method
+		vocabulary
+		resourceName
+		hooks
+		custom
+	}
+
+memoizedCompileUri = do ->
+	_memoizedCompileUri = memoize(
+		(vocabulary, odataQuery, method, bodyKeys) ->
+			try
+				abstractSql = odata2AbstractSQL[vocabulary].match(odataQuery, 'Process', [method, bodyKeys])
+			catch e
+				console.error('Failed to translate url: ', JSON.stringify(odataQuery, null, '\t'), method, e, e.stack)
+				throw new TranslationError('Failed to translate url')
+			try
+				sqlQuery = AbstractSQLCompiler.postgres.compileRule(abstractSql.tree)
+			catch err
+				api[apiRoot].logger.error('Failed to compile abstract sql: ', abstractSql.tree, err, err.stack)
+				throw new SqlCompilationError(err)
+			return { abstractSql, sqlQuery }
+		normalizer: JSON.stringify
+	)
+	return (vocabulary, odataQuery, method, body) ->
+		# Sort the body keys to improve cache hits
+		{ abstractSql: { tree, extraBodyVars }, sqlQuery } = _memoizedCompileUri(vocabulary, odataQuery, method, _.keys(body).sort())
+		_.assign(body, extraBodyVars)
+		abstractSqlQuery = _.cloneDeep(tree)
+		return { abstractSqlQuery, sqlQuery }
+
+exports.compileUri = (request) ->
+	if request.abstractSqlQuery?
+		return request
+	{ method, vocabulary, resourceName, odataBinds, odataQuery, values, custom, id, hooks, _defer } = request
+	isMetadataEndpoint = resourceName in metadataEndpoints or method is 'OPTIONS'
+	if !isMetadataEndpoint
+		{ abstractSqlQuery, sqlQuery } = memoizedCompileUri(vocabulary, odataQuery, method, values)
+		return {
+			method
+			vocabulary
+			resourceName
+			odataBinds
+			odataQuery
+			abstractSqlQuery
+			sqlQuery
 			values
 			custom
 			id

@@ -699,15 +699,7 @@ exports.handleODataRequest = handleODataRequest = (req, res, next) ->
 				# Add/check the relevant permissions
 				runHook('POSTPARSE', { req, request, tx: req.tx })
 				.return(request)
-				.then (uriParser.translateUri)
-				.then (request) ->
-					if request.abstractSqlQuery?
-						try
-							request.sqlQuery = memoizedCompileRule(request.abstractSqlQuery)
-						catch err
-							api[apiRoot].logger.error('Failed to compile abstract sql: ', request.abstractSqlQuery, err, err.stack)
-							throw new SqlCompilationError(err)
-					return request
+				.then(uriParser.compileUri)
 
 			.then (request) ->
 				# Run the request in its own transaction
