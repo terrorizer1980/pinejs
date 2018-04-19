@@ -207,14 +207,18 @@ export abstract class Tx {
 		}
 
 		this.rollback = (callback) => {
-			const promise = rollback()
+			const promise = rollback().finally(() => {
+				this.listeners.rollback.forEach(Promise.try)
+			})
 			closeTransaction('Transaction has been rolled back.')
 
 			return promise.nodeify(callback)
 		}
 
 		this.end = (callback) => {
-			const promise = commit()
+			const promise = commit().then(() => {
+				this.listeners.end.forEach(Promise.try)
+			})
 			closeTransaction('Transaction has been ended.')
 
 			return promise.nodeify(callback)
@@ -226,6 +230,19 @@ export abstract class Tx {
 			this.executeSql = executeSql
 			this.rollback = this.end = rollback
 		}
+	}
+
+	private listeners: {
+		end: Array<() => void>,
+		rollback: Array<() => void>,
+	} = {
+		end: [],
+		rollback: [],
+	}
+	public on(name: 'end', fn: () => void): void
+	public on(name: 'rollback', fn: () => void): void
+	public on(name: keyof Tx['listeners'], fn: () => void): void {
+		this.listeners[name].push(fn)
 	}
 
 	public abstract tableList(extraWhereClause?: string | Callback<Result>, callback?: Callback<Result>): Promise<Result>
