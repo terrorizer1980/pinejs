@@ -6,6 +6,7 @@ userModel = require './user.sbvr'
 { BadRequestError, PermissionError, PermissionParsingError } = require './errors'
 { ODataParser } = require '@resin/odata-parser'
 memoize = require 'memoizee'
+memoizeWeak = require 'memoizee/weak'
 { sqlNameToODataName, odataNameToSqlName } = require '@resin/odata-to-abstract-sql'
 
 exports.PermissionError = PermissionError
@@ -24,9 +25,9 @@ methodPermissions =
 	MERGE: or: ['set', 'update']
 	DELETE: 'delete'
 
-parsePermissions = do ->
+_parsePermissions = do ->
 	odataParser = ODataParser.createInstance()
-	_parsePermissions = memoize(
+	return memoize(
 		(filter) ->
 			# Reset binds
 			odataParser.binds = []
@@ -38,8 +39,7 @@ parsePermissions = do ->
 		primitive: true
 	)
 
-	return (filter, odataBinds) ->
-		{ tree, extraBinds } = _parsePermissions(filter)
+rewriteBinds = ({ tree, extraBinds }, odataBinds) ->
 		# Add the extra binds we parsed onto our existing list of binds vars.
 		bindsLength = odataBinds.length
 		odataBinds.push(extraBinds...)
@@ -47,6 +47,10 @@ parsePermissions = do ->
 		return _.cloneDeepWith tree, (value) ->
 			if value?.bind?
 				return { bind: value.bind + bindsLength }
+
+parsePermissions = (filter, odataBinds) ->
+	odata = _parsePermissions(filter)
+	rewriteBinds(odata, odataBinds)
 
 # Traverses all values in `check`, actions for the following data types:
 # string: Calls `stringCallback` and uses the value returned instead
@@ -574,31 +578,45 @@ exports.setup = (app, sbvrUtils) ->
 			resourceName: newResourceName
 		}
 
-	rewriteODataOptions = (request, data, lambda = {}) ->
-		_.each data, (v, k) ->
-			if _.isArray(v)
-				rewriteODataOptions(request, v, lambda)
-			else if _.isObject(v)
-				propertyName = v.name
-				if propertyName?
-					if v.lambda?
-						newLambda = _.clone(lambda)
-						newLambda[v.lambda.identifier] = sbvrUtils.resolveNavigationResource(request, propertyName)
-						# TODO: This should actually use the top level resource context,
-						# however odata-to-abstract-sql is bugged so we use the lambda context to match that bug for now
-						subRequest = resolveSubRequest(request, lambda, propertyName, v)
-						rewriteODataOptions(subRequest, v, newLambda)
-					else if v.options?
-						_.each v.options, (option, optionName) ->
+	memoizedRewriteODataOptions = do ->
+		rewriteODataOptions = (request, data, lambda = {}) ->
+			_.each data, (v, k) ->
+				if _.isArray(v)
+					rewriteODataOptions(request, v, lambda)
+				else if _.isObject(v)
+					propertyName = v.name
+					if propertyName?
+						if v.lambda?
+							newLambda = _.clone(lambda)
+							newLambda[v.lambda.identifier] = sbvrUtils.resolveNavigationResource(request, propertyName)
+							# TODO: This should actually use the top level resource context,
+							# however odata-to-abstract-sql is bugged so we use the lambda context to match that bug for now
 							subRequest = resolveSubRequest(request, lambda, propertyName, v)
-							rewriteODataOptions(subRequest, option, lambda)
-					else if v.property?
-						subRequest = resolveSubRequest(request, lambda, propertyName, v)
-						rewriteODataOptions(subRequest, v, lambda)
+							rewriteODataOptions(subRequest, v, newLambda)
+						else if v.options?
+							_.each v.options, (option, optionName) ->
+								subRequest = resolveSubRequest(request, lambda, propertyName, v)
+								rewriteODataOptions(subRequest, option, lambda)
+						else if v.property?
+							subRequest = resolveSubRequest(request, lambda, propertyName, v)
+							rewriteODataOptions(subRequest, v, lambda)
+						else
+							rewriteODataOptions(request, v, lambda)
 					else
 						rewriteODataOptions(request, v, lambda)
-				else
-					rewriteODataOptions(request, v, lambda)
+		return memoizeWeak(
+			(abstractSqlModel, vocabulary, resourceName, filter, tree) ->
+				tree = _.cloneDeep(tree)
+				rewriteODataOptions({ abstractSqlModel, vocabulary, resourceName }, [tree])
+				return tree
+			normalizer: ([ vocabulary, resourceName, filter ]) ->
+				filter + vocabulary + resourceName
+		)
+
+	parseRewrittenPermissions = (abstractSqlModel, vocabulary, resourceName, filter, odataBinds) ->
+		{ tree, extraBinds } = _parsePermissions(filter)
+		tree = memoizedRewriteODataOptions(abstractSqlModel, vocabulary, resourceName, filter, tree)
+		return rewriteBinds({ tree, extraBinds }, odataBinds)
 
 	addODataPermissions = (permissions, permissionType, vocabulary, resourceName, odataQuery, odataBinds, abstractSqlModel) ->
 		conditionalPerms = checkPermissions(permissions, permissionType, vocabulary, resourceName)
@@ -608,7 +626,7 @@ exports.setup = (app, sbvrUtils) ->
 		if conditionalPerms isnt true
 			permissionFilters = nestedCheck conditionalPerms, (permissionCheck) ->
 				try
-					permissionCheck = parsePermissions(permissionCheck, odataBinds)
+					permissionCheck = parseRewrittenPermissions(abstractSqlModel, vocabulary, resourceName, permissionCheck, odataBinds)
 					# We use an object with filter key to avoid collapsing our filters later.
 					return filter: permissionCheck
 				catch e
@@ -619,7 +637,6 @@ exports.setup = (app, sbvrUtils) ->
 				throw new PermissionError()
 			if permissionFilters isnt true
 				permissionFilters = collapsePermissionFilters(permissionFilters)
-				rewriteODataOptions({ abstractSqlModel, vocabulary, resourceName }, [permissionFilters])
 				odataQuery.options ?= {}
 				if odataQuery.options.$filter?
 					odataQuery.options.$filter = ['and', odataQuery.options.$filter, permissionFilters]
