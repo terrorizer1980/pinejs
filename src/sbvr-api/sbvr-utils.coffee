@@ -273,8 +273,6 @@ exports.executeModels = executeModels = (tx, models, callback) ->
 				sqlModels[vocab] = sqlModel
 				odataMetadata[vocab] = metadata
 
-				# uriParser.addClientModel(vocab, abstractSqlModel)
-
 				# Validate the [empty] model according to the rules.
 				# This may eventually lead to entering obligatory data.
 				# For the moment it blocks such models from execution.
@@ -347,7 +345,6 @@ cleanupModel = (vocab) ->
 	delete abstractSqlModels[vocab]
 	delete sqlModels[vocab]
 	delete odataMetadata[vocab]
-	# uriParser.deleteClientModel(vocab)
 	delete api[vocab]
 
 getHooks = do ->

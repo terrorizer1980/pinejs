@@ -13,8 +13,6 @@ exports.BadRequestError = BadRequestError
 exports.ParsingError = ParsingError
 exports.TranslationError = TranslationError
 
-# odata2AbstractSQL = {}
-
 # Converts a value to its string representation and tries to parse is as an
 # OData bind
 exports.parseId = (b) ->
@@ -37,11 +35,11 @@ exports.memoizedParseOdata = memoizedParseOdata = do ->
 			# We deep clone to avoid mutations polluting the cache
 			return _.cloneDeep(_memoizedParseOdata(url))
 
-memoizedGetOData2AbstractSQL = memoize(
+memoizedGetOData2AbstractSQL = memoizeWeak(
 	(abstractSqlModel) ->
-		odata2AbstractSQLx = OData2AbstractSQL.createInstance()
-		odata2AbstractSQLx.setClientModel(abstractSqlModel)
-		return odata2AbstractSQLx
+		odata2AbstractSQL = OData2AbstractSQL.createInstance()
+		odata2AbstractSQL.setClientModel(abstractSqlModel)
+		return odata2AbstractSQL
 )
 
 
@@ -49,11 +47,11 @@ memoizedOdata2AbstractSQL = do ->
 	_memoizedOdata2AbstractSQL = memoizeWeak(
 		(abstractSqlModel, odataQuery, method, bodyKeys, existingBindVarsLength) ->
 			try
-				odata2AbstractSQLx = memoizedGetOData2AbstractSQL(abstractSqlModel)
-				abstractSql =  odata2AbstractSQLx.match(odataQuery, 'Process', [method, bodyKeys, existingBindVarsLength])
+				odata2AbstractSQL = memoizedGetOData2AbstractSQL(abstractSqlModel)
+				abstractSql = odata2AbstractSQL.match(odataQuery, 'Process', [method, bodyKeys, existingBindVarsLength])
 				# We deep freeze to prevent mutations, which would pollute the cache
 				deepFreeze(abstractSql)
-				# return odata2AbstractSQL[vocabulary].match(odataQuery, 'Process', [method, bodyKeys])
+				return abstractSql
 			catch e
 				if e instanceof permissions.PermissionError
 					throw e
@@ -154,7 +152,7 @@ parseODataChangeset = (env, b) ->
 splitApiRoot = (url) ->
 	url = url.split('/')
 	apiRoot = url[1]
-	if !apiRoot? #or !odata2AbstractSQL[apiRoot]?
+	if !apiRoot?
 		throw new ParsingError('No such api root: ' + apiRoot)
 	url = '/' + url[2...].join('/')
 	return { url: url, apiRoot: apiRoot }
@@ -175,10 +173,3 @@ exports.translateUri = (request) ->
 		request.abstractSqlQuery = abstractSqlQuery
 		return request
 	return request
-
-# exports.addClientModel = (vocab, clientModel) ->
-# 	odata2AbstractSQL[vocab] = OData2AbstractSQL.createInstance()
-# 	odata2AbstractSQL[vocab].setClientModel(clientModel)
-
-# exports.deleteClientModel = (vocab, clientModel) ->
-# 	delete odata2AbstractSQL[vocab]
