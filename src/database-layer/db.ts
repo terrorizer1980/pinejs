@@ -61,14 +61,21 @@ const alwaysExport = {
 	UniqueConstraintError,
 	ForeignKeyConstraintError,
 }
+
+interface TransactionFn {
+	<T>(fn: (tx: Tx) => Promise<T> | T): Promise<T>
+	(): Promise<Tx>
+	<T>(fn?: (tx: Tx) => Promise<T> | T): Promise<T> | Promise<Tx>
+}
+
 export type Database = {
 	DatabaseError: typeof DatabaseError,
 	ConstraintError: typeof ConstraintError,
 	UniqueConstraintError: typeof UniqueConstraintError,
 	ForeignKeyConstraintError: typeof ForeignKeyConstraintError,
 	engine: string
-	executeSql: (this: Database, sql: Sql, bindings?: Bindings) => Promise<Tx>
-	transaction: (callback?: ((tx: Tx) => void)) => Promise<Tx>
+	executeSql: (this: Database, sql: Sql, bindings?: Bindings) => Promise<Result>
+	transaction: TransactionFn
 }
 
 export const engines: {
@@ -230,10 +237,8 @@ export abstract class Tx {
 
 const getStackTraceErr: (() => Error | undefined) = DEBUG ? () => new Error() : (_.noop as () => undefined)
 
-const createTransaction = (createFunc: CreateTransactionFn) => {
-	function transaction<T>(fn: (tx: Tx) => Promise<T> | T): Promise<T>
-	function transaction(): Promise<Tx>
-	function transaction<T>(fn?: (tx: Tx) => Promise<T> | T): Promise<T> | Promise<Tx> {
+const createTransaction = (createFunc: CreateTransactionFn): TransactionFn => {
+	return <T>(fn?: (tx: Tx) => Promise<T> | T): Promise<T> | Promise<Tx> => {
 		const stackTraceErr = getStackTraceErr()
 		// Create a new promise in order to be able to get access to cancellation, to let us
 		// return the client to the pool if the promise was cancelled whilst we were waiting
@@ -263,7 +268,6 @@ const createTransaction = (createFunc: CreateTransactionFn) => {
 			}
 		}) as Promise<Tx> | Promise<T>
 	}
-	return transaction
 }
 
 let maybePg: typeof _pg | undefined
