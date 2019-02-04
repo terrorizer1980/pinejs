@@ -51,13 +51,13 @@ export class SideEffectHook extends Hook {
 
 // The execution order of rollback actions is unspecified
 export const rollbackRequestHooks = Promise.method(
-	<T extends InstantiatedHooks<any>>(hooks: T | undefined): void => {
+	(hooks: InstantiatedHooks<object>[] | undefined): void => {
 		if (hooks == null) {
 			return;
 		}
 		settleMapSeries(
 			_(hooks)
-				.flatMap()
+				.flatMap(hookObj => _.flatMap(hookObj))
 				.compact()
 				.value(),
 			hook => {

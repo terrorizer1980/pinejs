@@ -93,9 +93,15 @@ export const getAndCheckBindValues = (
 
 				const sqlTableName = odataNameToSqlName(tableName);
 				const sqlFieldName = odataNameToSqlName(fieldName);
-				let maybeField = _.find(sqlModelTables[sqlTableName].fields, {
-					fieldName: sqlFieldName,
-				});
+				const table = sqlModelTables[sqlTableName];
+				let maybeField = _.find(
+					(table as any).modifyFields
+						? ((table as any).modifyFields as typeof table.fields)
+						: table.fields,
+					{
+						fieldName: sqlFieldName,
+					},
+				);
 				if (maybeField == null) {
 					throw new Error(`Could not find field '${fieldName}'`);
 				}
@@ -132,6 +138,7 @@ export const getAndCheckBindValues = (
 		}
 
 		if (value === undefined) {
+			// TODO: odata-to-abstract-sql need to use the latest version for translations or it needs to be somethingggggg
 			throw new Error(`Bind value cannot be undefined: ${binding}`);
 		}
 

@@ -14,9 +14,13 @@ const readdirAsync = Promise.promisify(fs.readdir);
 import { Database } from '../database-layer/db';
 import * as sbvrUtils from '../sbvr-api/sbvr-utils';
 import * as permissions from '../sbvr-api/permissions';
-import { Resolvable } from '../sbvr-api/common-types';
-import { AbstractSqlModel } from '@resin/abstract-sql-compiler';
+import { RequiredField, Resolvable } from '../sbvr-api/common-types';
+import {
+	AbstractSqlModel,
+	ReferencedFieldNode,
+} from '@resin/abstract-sql-compiler';
 import { Migration } from '../migrator/migrator';
+import { Definition } from '@resin/odata-to-abstract-sql';
 
 export interface SetupFunction {
 	(
@@ -57,6 +61,10 @@ export interface Model {
 				setup: SetupFunction;
 		  };
 	logging?: { [key in keyof Console | 'default']?: boolean };
+	translateTo?: Model['apiRoot'];
+	translations?: _.Dictionary<
+		Definition | _.Dictionary<string | ReferencedFieldNode>
+	>;
 }
 export interface User {
 	username: string;
@@ -190,15 +198,38 @@ export const setup = (app: _express.Application) => {
 						}).return();
 					}
 				})
-					.return(data.models)
-					.map(model =>
-						Promise.try(() => {
-							if (
-								(model.abstractSql != null || model.modelText != null) &&
-								model.apiRoot != null
-							) {
-								return sbvrUtils
-									.executeModel(tx, model as sbvrUtils.ExecutableModel)
+					.then(() => {
+						const modelPromises: _.Dictionary<Promise<void>> = _(data.models)
+							.filter(
+								model =>
+									(model.abstractSql != null || model.modelText != null) &&
+									model.apiRoot != null,
+							)
+							.keyBy(model => model.apiRoot)
+							.mapValues((model: Model) => {
+								// We use Promise.resolve.then because we need the async boundary
+								return Promise.resolve()
+									.then(() => {
+										const { translateTo, translations } = model;
+										if (translateTo != null) {
+											if (modelPromises[translateTo] == null) {
+												throw new Error(
+													`Cannot translate to non-existent version '${translateTo}'`,
+												);
+											}
+											// Wait on the `translateTo` version since it needs to already be available
+											return modelPromises[translateTo];
+										} else if (translations != null) {
+											throw new Error(
+												'Cannot have translations without a translateTo target',
+											);
+										}
+									})
+									.then(() =>
+										sbvrUtils.executeModel(tx, model as
+											| RequiredField<Model, 'apiRoot' | 'modelText'>
+											| RequiredField<Model, 'apiRoot' | 'abstractSql'>),
+									)
 									.then(() => {
 										const apiRoute = `/${model.apiRoot}/*`;
 										app.options(apiRoute, (_req, res) => res.sendStatus(200));
@@ -216,8 +247,12 @@ export const setup = (app: _express.Application) => {
 										}
 										throw new Error(message);
 									});
-							}
-						}).then(() => {
+							})
+							.value();
+						return Promise.props(modelPromises);
+					})
+					.then(() =>
+						Promise.map(data.models, model => {
 							if (model.customServerCode != null) {
 								let customCode: SetupFunction;
 								if (_.isString(model.customServerCode)) {
@@ -306,72 +341,72 @@ export const setup = (app: _express.Application) => {
 			return path.join(root, s);
 		};
 
-		return Promise.resolve(configPromise)
-			.then(configObj =>
-				Promise.map(configObj.models, model =>
-					Promise.try<string | undefined>(() => {
-						if (model.modelFile != null) {
-							return readFileAsync(resolvePath(model.modelFile), 'utf8');
+		return Promise.resolve(configPromise).then(configObj =>
+			Promise.map(configObj.models, model =>
+				Promise.try<string | undefined>(() => {
+					if (model.modelFile != null) {
+						return readFileAsync(resolvePath(model.modelFile), 'utf8');
+					}
+					return model.modelText;
+				})
+					.then(modelText => {
+						model.modelText = modelText;
+						if (model.customServerCode != null) {
+							model.customServerCode = root + '/' + model.customServerCode;
 						}
-						return model.modelText;
 					})
-						.then(modelText => {
-							model.modelText = modelText;
-							if (_.isString(model.customServerCode)) {
-								model.customServerCode = resolvePath(model.customServerCode);
-							}
-						})
-						.then(() => {
-							if (model.migrations == null) {
-								model.migrations = {};
-							}
-							const migrations = model.migrations;
+					.then(() => {
+						if (model.migrations == null) {
+							model.migrations = {};
+						}
+						const migrations = model.migrations;
 
-							if (model.migrationsPath) {
-								const migrationsPath = resolvePath(model.migrationsPath);
-								delete model.migrationsPath;
+						if (model.migrationsPath) {
+							const migrationsPath = resolvePath(model.migrationsPath);
+							delete model.migrationsPath;
 
-								return readdirAsync(migrationsPath)
-									.map(filename => {
-										const filePath = path.join(migrationsPath, filename);
-										const migrationKey = filename.split('-')[0];
+							return readdirAsync(migrationsPath)
+								.map(filename => {
+									const filePath = path.join(migrationsPath, filename);
+									const migrationKey = filename.split('-')[0];
 
-										switch (path.extname(filename)) {
-											case '.coffee':
-											case '.ts':
-											case '.js':
-												migrations[migrationKey] = nodeRequire(filePath);
-												break;
-											case '.sql':
-												return readFileAsync(filePath, 'utf8').then(sql => {
-													migrations[migrationKey] = sql;
-												});
-											default:
-												console.error(
-													`Unrecognised migration file extension, skipping: ${path.extname(
-														filename,
-													)}`,
-												);
-										}
-									})
-									.return();
-							}
-						})
-						.then(() => {
-							if (model.initSqlPath) {
-								const initSqlPath = resolvePath(model.initSqlPath);
-								return readFileAsync(initSqlPath, 'utf8').then(initSql => {
-									model.initSql = initSql;
-								});
-							}
-						}),
-				).then(() => loadConfig(configObj)),
+									switch (path.extname(filename)) {
+										case '.coffee':
+										case '.ts':
+										case '.js':
+											migrations[migrationKey] = nodeRequire(filePath);
+											break;
+										case '.sql':
+											return readFileAsync(filePath, 'utf8').then(sql => {
+												migrations[migrationKey] = sql;
+											});
+										default:
+											console.error(
+												`Unrecognised migration file extension, skipping: ${path.extname(
+													filename,
+												)}`,
+											);
+									}
+								})
+								.return();
+						}
+					})
+					.then(() => {
+						if (model.initSqlPath) {
+							const initSqlPath = resolvePath(model.initSqlPath);
+							return readFileAsync(initSqlPath, 'utf8').then(initSql => {
+								model.initSql = initSql;
+							});
+						}
+					}),
 			)
-			.catch(err => {
-				console.error('Error loading application config', err, err.stack);
-				process.exit(1);
-				throw new Error('Unreachable');
-			});
+				.then(() => loadConfig(configObj))
+				.catch(err => {
+					console.error('Error loading application config', err, err.stack);
+					process.exit(1);
+					throw new Error('Unreachable');
+				}),
+		);
 	};
 
 	return {

@@ -1139,7 +1139,8 @@ export const addPermissions = Promise.method(
 		req: PermissionReq,
 		request: ODataRequest & { permissionType?: PermissionCheck },
 	): Promise<void> => {
-		const { vocabulary, resourceName, odataQuery, odataBinds } = request;
+		const { resourceName, odataQuery, odataBinds } = request;
+		const vocabulary = _.last(request.translateVersions)!;
 		let { method, permissionType: maybePermissionType } = request;
 		let abstractSqlModel = sbvrUtils.getAbstractSqlModel(request);
 		method = method.toUpperCase() as SupportedMethod;
@@ -1166,16 +1167,21 @@ export const addPermissions = Promise.method(
 		permissions = permissions.concat(
 			req.apiKey == null ? [] : req.apiKey.permissions || [],
 		);
-		if (
-			permissions.length > 0 &&
-			$checkPermissions(
-				getPermissionsLookup(permissions),
-				permissionType,
-				vocabulary,
-			) === true
-		) {
-			// We have unconditional permission to access the vocab so there's no need to intercept anything
-			return Promise.resolve();
+		if (permissions.length > 0) {
+			const permissionsLookup = getPermissionsLookup(permissions);
+			if (
+				$checkPermissions(permissionsLookup, permissionType, vocabulary) ===
+				true
+			) {
+				// We have unconditional permission to access the vocab so there's no need to use `getReqPermissions` (and doing so will likely break)
+				// TODO: Test that it does actually break
+				request.abstractSqlModel = abstractSqlModel = memoizedGetConstrainedModel(
+					abstractSqlModel,
+					permissionsLookup,
+					vocabulary,
+				);
+				return Promise.resolve();
+			}
 		}
 		return getReqPermissions(req, odataBinds).then(permissionsLookup => {
 			// Update the request's abstract sql model to use the constrained version
@@ -1212,12 +1218,20 @@ export const setup = () => {
 			request,
 		}: {
 			req: HookReq;
-			request: ODataRequest & { permissionType?: PermissionCheck };
+			request: ODataRequest & {
+				permissionType?: PermissionCheck;
+				permissionsAdded?: boolean;
+			};
 		}) => {
 			// If the abstract sql query is already generated then adding permissions will do nothing
-			if (request.abstractSqlQuery != null) {
+			if (
+				request.abstractSqlQuery != null ||
+				request.permissionsAdded === true
+			) {
 				return;
 			}
+			// TODO: This should not be necessary and `all` hooks should automatically only be applied once
+			request.permissionsAdded = true;
 			if (
 				request.method === 'POST' &&
 				request.odataQuery.property != null &&

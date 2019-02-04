@@ -62,6 +62,7 @@ import {
 	instantiateHooks,
 	HookBlueprint,
 	InstantiatedHooks,
+	Hook,
 } from './hooks';
 
 import * as controlFlow from './control-flow';
@@ -86,6 +87,7 @@ import {
 } from './abstract-sql';
 export { resolveOdataBind } from './abstract-sql';
 import * as odataResponse from './odata-response';
+import { translateAbstractSqlModel } from './translations';
 
 const LF2AbstractSQLTranslator = LF2AbstractSQL.createTranslator(sbvrTypes);
 const LF2AbstractSQLTranslatorVersion = `${LF2AbstractSQLVersion}+${sbvrTypesVersion}`;
@@ -96,6 +98,7 @@ export type ExecutableModel =
 
 interface CompiledModel {
 	vocab: string;
+	translateTo?: string;
 	se?: string;
 	lf?: LFModel;
 	abstractSql: AbstractSQLCompiler.AbstractSqlModel;
@@ -103,7 +106,9 @@ interface CompiledModel {
 	odataMetadata: ReturnType<typeof ODataMetadataGenerator>;
 }
 const models: {
-	[vocabulary: string]: CompiledModel;
+	[vocabulary: string]: CompiledModel & {
+		versions: string[];
+	};
 } = {};
 
 export interface HookReq {
@@ -397,7 +402,7 @@ export const generateModels = (
 	model: ExecutableModel,
 	targetDatabaseEngine: AbstractSQLCompiler.Engines,
 ): CompiledModel => {
-	const { apiRoot: vocab, modelText: se } = model;
+	const { apiRoot: vocab, modelText: se, translateTo } = model;
 	let { abstractSql: maybeAbstractSql } = model;
 
 	let lf: ReturnType<typeof generateLfModel> | undefined;
@@ -439,7 +444,7 @@ export const generateModels = (
 		throw new Error(`Error compiling model '${vocab}': ` + e);
 	}
 
-	return { vocab, se, lf, abstractSql, sql, odataMetadata };
+	return { vocab, translateTo, se, lf, abstractSql, sql, odataMetadata };
 };
 
 export const executeModel = (
@@ -454,30 +459,62 @@ export const executeModels = (
 	callback?: (err?: Error) => void,
 ): Promise<void> =>
 	Promise.map(execModels, model => {
-		const { apiRoot } = model;
+		const { apiRoot, translateTo, translations } = model;
 
 		return migrator.run(tx, model).then(() => {
 			const compiledModel = generateModels(model, db.engine);
 
-			// Create tables related to terms and fact types
-			// Use `Promise.each` to run statements sequentially, as the order of the CREATE TABLE statements matters (eg. for foreign keys).
-			return Promise.each(compiledModel.sql.createSchema, createStatement => {
-				const promise = tx.executeSql(createStatement);
-				if (db.engine === 'websql') {
-					promise.catch(err => {
-						console.warn(
-							"Ignoring errors in the create table statements for websql as it doesn't support CREATE IF NOT EXISTS",
-							err,
-						);
+			return Promise.try(() => {
+				if (translateTo != null) {
+					translateAbstractSqlModel(
+						compiledModel.abstractSql,
+						models[translateTo].abstractSql,
+						model.apiRoot,
+						translateTo,
+						translations,
+					);
+				} else {
+					Object.keys(compiledModel.abstractSql.tables).forEach(key => {
+						const table = compiledModel.abstractSql.tables[key];
+						// Alias the current version so it can be explicitly referenced
+						compiledModel.abstractSql.tables[
+							`${key}$${model.apiRoot}`
+						] = _.clone(table);
 					});
+
+					// Only run the createSchema statements for non-translated models
+					// Use `Promise.each` to run statements sequentially, as the order of the CREATE TABLE statements matters (eg. for foreign keys).
+					return Promise.each(
+						compiledModel.sql.createSchema,
+						createStatement => {
+							const promise = tx.executeSql(createStatement);
+							if (db.engine === 'websql') {
+								promise.catch(err => {
+									console.warn(
+										"Ignoring errors in the create table statements for websql as it doesn't support CREATE IF NOT EXISTS",
+										err,
+									);
+								});
+							}
+							return promise;
+						},
+					).return();
 				}
-				return promise;
 			})
 				.then(() => migrator.postRun(tx, model))
 				.then(() => {
 					odataResponse.prepareModel(compiledModel.abstractSql);
 					deepFreeze(compiledModel.abstractSql);
-					models[apiRoot] = compiledModel;
+					const versions = [apiRoot];
+					let nextVersion = compiledModel.translateTo;
+					while (nextVersion != null) {
+						versions.push(nextVersion);
+						nextVersion = models[nextVersion].translateTo;
+					}
+					models[apiRoot] = {
+						...compiledModel,
+						versions,
+					};
 
 					// Validate the [empty] model according to the rules.
 					// This may eventually lead to entering obligatory data.
@@ -633,10 +670,45 @@ const getHooks = (
 };
 getHooks.clear = () => getMethodHooks.clear();
 
+// const runHooks = Promise.method(
+// 	(
+// 		hookName: keyof Hooks,
+// 		hooksList: InstantiatedHooks<Hooks> | undefined,
+// 		args: {
+// 			request?: uriParser.ODataRequest;
+// 			req: _express.Request;
+// 			res?: _express.Response;
+// 			tx?: _db.Tx;
+// 			result?: any;
+// 			data?: number | any[];
+// 		},
+// 	) => {
+// 		if (hooksList == null) {
+// 			return;
+// 		}
+// 		const hooks = hooksList[hookName];
+// 		if (hooks == null || hooks.length === 0) {
+// 			return;
+// 		}
+// 		const { request, req, tx } = args;
+// 		if (request != null) {
+// 			const { vocabulary } = request;
+// 			Object.defineProperty(args, 'api', {
+// 				get: _.once(() =>
+// 					api[vocabulary].clone({
+// 						passthrough: { req, tx },
+// 					}),
+// 				),
+// 			});
+// 		}
+// 		return Promise.map(hooks, hook => hook.run(args)).return();
+// 	},
+// );
+
 const runHooks = Promise.method(
 	(
 		hookName: keyof Hooks,
-		hooksList: InstantiatedHooks<Hooks> | undefined,
+		hooksList: Array<[string, InstantiatedHooks<Hooks>]> | undefined,
 		args: {
 			request?: uriParser.ODataRequest;
 			req: _express.Request;
@@ -649,22 +721,31 @@ const runHooks = Promise.method(
 		if (hooksList == null) {
 			return;
 		}
-		const hooks = hooksList[hookName];
-		if (hooks == null || hooks.length === 0) {
+		const hooks = hooksList
+			.map(([version, hooks]): [string, Hook[] | undefined] => [
+				version,
+				hooks[hookName],
+			])
+			.filter((v): v is [string, Hook[]] => v[1] != null && v[1].length > 0);
+		if (hooks.length === 0) {
 			return;
 		}
-		const { request, req, tx } = args;
-		if (request != null) {
-			const { vocabulary } = request;
-			Object.defineProperty(args, 'api', {
+		// const { request, req, tx } = args;
+		const { req, tx } = args;
+		return Promise.each(hooks, ([version, versionHooks]) => {
+			// if (request != null) {
+			// 	const { vocabulary } = request;
+			const boundArgs = _.clone(args);
+			Object.defineProperty(boundArgs, 'api', {
 				get: _.once(() =>
-					api[vocabulary].clone({
+					api[version].clone({
 						passthrough: { req, tx },
 					}),
 				),
 			});
-		}
-		return Promise.map(hooks, hook => hook.run(args)).return();
+			// }
+			return Promise.map(versionHooks, hook => hook.run(boundArgs));
+		}).return();
 	},
 );
 
@@ -1057,34 +1138,37 @@ export const getAffectedIds = Promise.method(
 				method: request.method,
 				url: `/${request.vocabulary}${request.url}`,
 			})
-			.then(request => {
-				request.engine = db.engine;
-				const abstractSqlModel = getAbstractSqlModel(request);
-				const resourceName = resolveSynonym(request);
+			.then(affectedRequest => {
+				affectedRequest.engine = request.engine;
+				affectedRequest.translateVersions = request.translateVersions;
+				const abstractSqlModel = getAbstractSqlModel(affectedRequest);
+				const resourceName = resolveSynonym(affectedRequest);
 				const resourceTable = abstractSqlModel.tables[resourceName];
 				if (resourceTable == null) {
-					throw new Error('Unknown resource: ' + request.resourceName);
+					throw new Error('Unknown resource: ' + affectedRequest.resourceName);
 				}
 				const { idField } = resourceTable;
 
-				if (request.odataQuery.options == null) {
-					request.odataQuery.options = {};
+				if (affectedRequest.odataQuery.options == null) {
+					affectedRequest.odataQuery.options = {};
 				}
-				request.odataQuery.options.$select = {
+				affectedRequest.odataQuery.options.$select = {
 					properties: [{ name: idField }],
 				};
 
 				// Delete any $expand that might exist as they're ignored on non-GETs but we're converting this request to a GET
-				delete request.odataQuery.options.$expand;
+				delete affectedRequest.odataQuery.options.$expand;
 
-				return permissions.addPermissions(req, request).then(() => {
-					request.method = 'GET';
+				return permissions.addPermissions(req, affectedRequest).then(() => {
+					affectedRequest.method = 'GET';
 
-					request = uriParser.translateUri(request);
-					request = compileRequest(request);
+					affectedRequest = uriParser.translateUri(affectedRequest);
+					affectedRequest = compileRequest(affectedRequest);
 
 					const doRunQuery = (tx: _db.Tx) =>
-						runQuery(tx, request).then(result => _.map(result.rows, idField));
+						runQuery(tx, affectedRequest).then(result =>
+							_.map(result.rows, idField),
+						);
 					if (tx != null) {
 						return doRunQuery(tx);
 					} else {
@@ -1106,12 +1190,21 @@ export const handleODataRequest: _express.Handler = (req, res, next) => {
 	}
 
 	const mapSeries = controlFlow.getMappingFn(req.headers);
+
+	const { versions } = models[apiRoot];
+
 	// Get the hooks for the current method/vocabulary as we know it,
 	// in order to run PREPARSE hooks, before parsing gets us more info
-	const reqHooks = getHooks({
-		method: req.method as SupportedMethod,
-		vocabulary: apiRoot,
-	});
+	const reqHooks = versions.map((version): [
+		string,
+		InstantiatedHooks<Hooks>,
+	] => [
+		version,
+		getHooks({
+			method: req.method as SupportedMethod,
+			vocabulary: version,
+		}),
+	]);
 
 	req.on('close', () => {
 		handlePromise.cancel();
@@ -1127,6 +1220,12 @@ export const handleODataRequest: _express.Handler = (req, res, next) => {
 			rollbackRequestHooks(reqHooks);
 		});
 	}
+
+	// Promise.each(versions, version =>
+	// 	rewriteRequestBodys[version](...args),
+	// ).then(() => {
+	// 	rewriteSqlResponseBody(...args);
+	// });
 
 	const handlePromise = runHooks('PREPARSE', reqHooks, { req, tx: req.tx })
 		.then(() => {
@@ -1146,16 +1245,29 @@ export const handleODataRequest: _express.Handler = (req, res, next) => {
 					.parseOData(requestPart)
 					.then(
 						controlFlow.liftP(request => {
+							request.translateVersions = _.clone(versions);
 							request.engine = db.engine;
-							// Get the full hooks list now that we can.
-							request.hooks = getHooks(request);
-							// Add/check the relevant permissions
-							return runHooks('POSTPARSE', request.hooks, {
-								req,
-								request,
-								tx: req.tx,
+							return Promise.mapSeries(versions, version => {
+								// We get the hooks list between each `runHooks` so that any resource renames will be used
+								// when getting hooks for later versions
+								const hooks: [string, InstantiatedHooks<Hooks>] = [
+									version,
+									getHooks({
+										resourceName: request.resourceName,
+										vocabulary: version,
+										method: request.method,
+									}),
+								];
+								return runHooks('POSTPARSE', [hooks], {
+									req,
+									request,
+									tx: req.tx,
+								}).return(hooks);
 							})
-								.return(request)
+								.then(hooks => {
+									request.hooks = hooks;
+									return request;
+								})
 								.then(uriParser.translateUri)
 								.then(compileRequest)
 								.tapCatch(() => {

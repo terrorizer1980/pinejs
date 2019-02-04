@@ -49,6 +49,7 @@ export interface ODataRequest {
 	sqlQuery?: _AbstractSQLCompiler.SqlResult | _AbstractSQLCompiler.SqlResult[];
 	resourceName: string;
 	vocabulary: string;
+	translateVersions?: string[];
 	_defer?: boolean;
 	id?: number;
 	custom: sbvrUtils.AnyObject;
@@ -56,7 +57,7 @@ export interface ODataRequest {
 	modifiedFields?: ReturnType<
 		_AbstractSQLCompiler.EngineInstance['getModifiedFields']
 	>;
-	hooks?: InstantiatedHooks<sbvrUtils.Hooks>;
+	hooks?: Array<[string, InstantiatedHooks<sbvrUtils.Hooks>]>;
 	engine?: _AbstractSQLCompiler.Engines;
 }
 
@@ -214,6 +215,7 @@ const memoizedOdata2AbstractSQL = (() => {
 	) => {
 		const { method, odataBinds, values } = request;
 		let { odataQuery } = request;
+		// TODO: This gives the current constrained model, but for non-GET requests we need the constrained latest version..?
 		const abstractSqlModel = sbvrUtils.getAbstractSqlModel(request);
 		// Sort the body keys to improve cache hits
 		const sortedBody = _.keys(values).sort();
