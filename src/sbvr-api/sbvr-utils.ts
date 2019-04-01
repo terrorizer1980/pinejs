@@ -102,7 +102,7 @@ interface CompiledModel {
 	se?: string;
 	lf?: LFModel;
 	abstractSql: AbstractSQLCompiler.AbstractSqlModel;
-	sql: AbstractSQLCompiler.SqlModel;
+	sql?: AbstractSQLCompiler.SqlModel;
 	odataMetadata: ReturnType<typeof ODataMetadataGenerator>;
 }
 const models: {
@@ -358,7 +358,11 @@ export const validateModel = (
 	modelName: string,
 	request?: uriParser.ODataRequest,
 ): Promise<void> => {
-	return Promise.map(models[modelName].sql.rules, rule => {
+	const { sql } = models[modelName];
+	if (!sql) {
+		throw new Error(`Tried to validate a virtual model: '${modelName}'`);
+	}
+	return Promise.map(sql.rules, rule => {
 		if (!isRuleAffected(rule, request)) {
 			// If none of the fields intersect we don't need to run the rule! :D
 			return;
@@ -402,7 +406,7 @@ export const generateModels = (
 	model: ExecutableModel,
 	targetDatabaseEngine: AbstractSQLCompiler.Engines,
 ): CompiledModel => {
-	const { apiRoot: vocab, modelText: se, translateTo } = model;
+	const { apiRoot: vocab, modelText: se, translateTo, translations } = model;
 	let { abstractSql: maybeAbstractSql } = model;
 
 	let lf: ReturnType<typeof generateLfModel> | undefined;
@@ -430,18 +434,36 @@ export const generateModels = (
 		() => ODataMetadataGenerator(vocab, abstractSql),
 	);
 
-	let sql: ReturnType<AbstractSQLCompiler.EngineInstance['compileSchema']>;
-	try {
-		sql = cachedCompile(
-			'sqlModel',
-			AbstractSQLCompilerVersion + '+' + targetDatabaseEngine,
+	let sql:
+		| ReturnType<AbstractSQLCompiler.EngineInstance['compileSchema']>
+		| undefined;
+
+	if (translateTo != null) {
+		translateAbstractSqlModel(
 			abstractSql,
-			() =>
-				AbstractSQLCompiler[targetDatabaseEngine].compileSchema(abstractSql),
+			models[translateTo].abstractSql,
+			model.apiRoot,
+			translateTo,
+			translations,
 		);
-	} catch (e) {
-		console.error(`Error compiling model '${vocab}':`, e);
-		throw new Error(`Error compiling model '${vocab}': ` + e);
+	} else {
+		Object.keys(abstractSql.tables).forEach(key => {
+			const table = abstractSql.tables[key];
+			// Alias the current version so it can be explicitly referenced
+			abstractSql.tables[`${key}$${model.apiRoot}`] = _.clone(table);
+		});
+		try {
+			sql = cachedCompile(
+				'sqlModel',
+				AbstractSQLCompilerVersion + '+' + targetDatabaseEngine,
+				abstractSql,
+				() =>
+					AbstractSQLCompiler[targetDatabaseEngine].compileSchema(abstractSql),
+			);
+		} catch (e) {
+			console.error(`Error compiling model '${vocab}':`, e);
+			throw new Error(`Error compiling model '${vocab}': ` + e);
+		}
 	}
 
 	return { vocab, translateTo, se, lf, abstractSql, sql, odataMetadata };
@@ -459,29 +481,13 @@ export const executeModels = (
 	callback?: (err?: Error) => void,
 ): Promise<void> =>
 	Promise.map(execModels, model => {
-		const { apiRoot, translateTo, translations } = model;
+		const { apiRoot } = model;
 
 		return migrator.run(tx, model).then(() => {
 			const compiledModel = generateModels(model, db.engine);
 
 			return Promise.try(() => {
-				if (translateTo != null) {
-					translateAbstractSqlModel(
-						compiledModel.abstractSql,
-						models[translateTo].abstractSql,
-						model.apiRoot,
-						translateTo,
-						translations,
-					);
-				} else {
-					Object.keys(compiledModel.abstractSql.tables).forEach(key => {
-						const table = compiledModel.abstractSql.tables[key];
-						// Alias the current version so it can be explicitly referenced
-						compiledModel.abstractSql.tables[
-							`${key}$${model.apiRoot}`
-						] = _.clone(table);
-					});
-
+				if (compiledModel.sql) {
 					// Only run the createSchema statements for non-translated models
 					// Use `Promise.each` to run statements sequentially, as the order of the CREATE TABLE statements matters (eg. for foreign keys).
 					return Promise.each(
@@ -519,7 +525,9 @@ export const executeModels = (
 					// Validate the [empty] model according to the rules.
 					// This may eventually lead to entering obligatory data.
 					// For the moment it blocks such models from execution.
-					return validateModel(tx, apiRoot);
+					if (compiledModel.sql) {
+						return validateModel(tx, apiRoot);
+					}
 				})
 				.then(() => {
 					// TODO: Can we do this without the cast?
@@ -752,33 +760,36 @@ const runHooks = Promise.method(
 export const deleteModel = (
 	vocabulary: string,
 	callback?: (err?: Error) => void,
-) => {
-	return db
-		.transaction(tx => {
-			const dropStatements: Array<Promise<any>> = _.map(
-				models[vocabulary].sql.dropSchema,
-				(dropStatement: string) => tx.executeSql(dropStatement),
-			);
-			return Promise.all(
-				dropStatements.concat([
-					api.dev.delete({
-						resource: 'model',
-						passthrough: {
-							tx,
-							req: permissions.root,
-						},
-						options: {
-							$filter: {
-								is_of__vocabulary: vocabulary,
+) =>
+	Promise.try(() => {
+		const { sql } = models[vocabulary];
+		if (sql) {
+			db.transaction(tx => {
+				const dropStatements: Array<Promise<any>> = _.map(
+					sql.dropSchema,
+					(dropStatement: string) => tx.executeSql(dropStatement),
+				);
+				return Promise.all(
+					dropStatements.concat([
+						api.dev.delete({
+							resource: 'model',
+							passthrough: {
+								tx,
+								req: permissions.root,
 							},
-						},
-					}),
-				]),
-			);
-		})
+							options: {
+								$filter: {
+									is_of__vocabulary: vocabulary,
+								},
+							},
+						}),
+					]),
+				);
+			});
+		}
+	})
 		.then(() => cleanupModel(vocabulary))
 		.asCallback(callback);
-};
 
 const isWhereNode = (
 	x: AbstractSQLCompiler.AbstractSqlType,
@@ -1642,8 +1653,6 @@ const runPost = (
 	request: uriParser.ODataRequest,
 	tx: _db.Tx,
 ) => {
-	const vocab = request.vocabulary;
-
 	const { idField } = getAbstractSqlModel(request).tables[
 		resolveSynonym(request)
 	];
@@ -1653,7 +1662,7 @@ const runPost = (
 			if (sqlResult.rowsAffected === 0) {
 				throw new PermissionError();
 			}
-			return validateModel(tx, vocab, request);
+			return validateModel(tx, _.last(request.translateVersions)!, request);
 		})
 		.then(({ insertId }) => insertId);
 };
@@ -1710,8 +1719,6 @@ const runPut = (
 	request: uriParser.ODataRequest,
 	tx: _db.Tx,
 ): Promise<undefined> => {
-	const vocab = request.vocabulary;
-
 	return Promise.try(() => {
 		// If request.sqlQuery is an array it means it's an UPSERT, ie two queries: [InsertQuery, UpdateQuery]
 		if (_.isArray(request.sqlQuery)) {
@@ -1729,7 +1736,7 @@ const runPut = (
 	})
 		.then(({ rowsAffected }) => {
 			if (rowsAffected > 0) {
-				return validateModel(tx, vocab, request);
+				return validateModel(tx, _.last(request.translateVersions)!, request);
 			}
 		})
 		.return(undefined);
@@ -1761,12 +1768,10 @@ const runDelete = (
 	request: uriParser.ODataRequest,
 	tx: _db.Tx,
 ) => {
-	const vocab = request.vocabulary;
-
 	return runQuery(tx, request)
 		.then(({ rowsAffected }) => {
 			if (rowsAffected > 0) {
-				return validateModel(tx, vocab, request);
+				return validateModel(tx, _.last(request.translateVersions)!, request);
 			}
 		})
 		.return(undefined);

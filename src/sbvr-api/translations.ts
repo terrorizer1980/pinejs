@@ -726,6 +726,8 @@ export const translateAbstractSqlModel = (
 		Definition | _.Dictionary<string | ReferencedFieldNode>
 	> = {},
 ): void => {
+	fromAbstractSqlModel.rules = toAbstractSqlModel.rules;
+
 	const fromKeys = Object.keys(fromAbstractSqlModel.tables);
 	const nonexistentTables = _.difference(Object.keys(definitions), fromKeys);
 	if (nonexistentTables.length > 0) {
@@ -783,19 +785,18 @@ export const translateAbstractSqlModel = (
 		const definition = definitions[key];
 		const table = fromAbstractSqlModel.tables[key];
 		if (definition) {
+			const toResource = _.isString((definition as any).$toResource)
+				? (definition as any).$toResource
+				: `${key}$${toVersion}`;
+			const toTable = fromAbstractSqlModel.tables[toResource];
+			(table as any).modifyFields = _.cloneDeep(
+				(toTable as any).modifyFields
+					? (toTable as any).modifyFields
+					: toTable.fields,
+			);
 			if ('extraBinds' in definition && 'abstractSqlQuery' in definition) {
-				// TODO: This should be customisable rather than hardcoded
-				(table as any).modifyFields = _.cloneDeep(
-					fromAbstractSqlModel.tables[`${key}$${toVersion}`].fields,
-				);
 				table.definition = definition as Definition;
 			} else {
-				const toResource = _.isString(definition.$toResource)
-					? definition.$toResource
-					: `${key}$${toVersion}`;
-				(table as any).modifyFields = _.cloneDeep(
-					fromAbstractSqlModel.tables[toResource].fields,
-				);
 				table.definition = aliasResource(
 					fromAbstractSqlModel,
 					key,
@@ -804,8 +805,11 @@ export const translateAbstractSqlModel = (
 				);
 			}
 		} else {
+			const toTable = fromAbstractSqlModel.tables[`${key}$${toVersion}`];
 			(table as any).modifyFields = _.cloneDeep(
-				fromAbstractSqlModel.tables[`${key}$${toVersion}`].fields,
+				(toTable as any).modifyFields
+					? (toTable as any).modifyFields
+					: toTable.fields,
 			);
 			table.definition = {
 				extraBinds: [],
