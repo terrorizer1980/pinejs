@@ -1,4 +1,16 @@
 - commits:
+    - subject: Update npm namespace
+      hash: f7743cecc13850e518d7ee8abd5267792575ab57
+      body: ''
+      footer:
+        Change-type: patch
+        change-type: patch
+        Signed-off-by: Juan Cruz Viotti <juan@balena.io>
+        signed-off-by: Juan Cruz Viotti <juan@balena.io>
+      author: Juan Cruz Viotti
+  version: 10.11.3
+  date: 2019-04-24T15:47:29.250Z
+- commits:
     - subject: Only validate the model if the query affected at least 1 row
       hash: 8bfd0a1f1cd45a837957f210979ec910e0e46261
       body: ''
