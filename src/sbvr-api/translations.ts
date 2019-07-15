@@ -177,7 +177,7 @@ export const rewriteODataOptions = (
 				abstractSqlModel,
 				lambda,
 			);
-		} else if (_.isObject(v)) {
+		} else if (v != null && typeof v === 'object') {
 			const propertyName = v.name;
 			if (propertyName != null) {
 				if (

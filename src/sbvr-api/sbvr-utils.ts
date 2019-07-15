@@ -402,10 +402,18 @@ export const generateAbstractSqlModel = (
 		() => LF2AbstractSQLTranslator(lfModel, 'Process'),
 	);
 
-export const generateModels = (
+export function generateModels(
+	model: ExecutableModel & { translateTo?: undefined },
+	targetDatabaseEngine: AbstractSQLCompiler.Engines,
+): RequiredField<CompiledModel, 'sql'>;
+export function generateModels(
 	model: ExecutableModel,
 	targetDatabaseEngine: AbstractSQLCompiler.Engines,
-): CompiledModel => {
+): CompiledModel;
+export function generateModels(
+	model: ExecutableModel,
+	targetDatabaseEngine: AbstractSQLCompiler.Engines,
+): CompiledModel {
 	const { apiRoot: vocab, modelText: se, translateTo, translations } = model;
 	let { abstractSql: maybeAbstractSql } = model;
 
@@ -467,7 +475,7 @@ export const generateModels = (
 	}
 
 	return { vocab, translateTo, se, lf, abstractSql, sql, odataMetadata };
-};
+}
 
 export const executeModel = (
 	tx: _db.Tx,

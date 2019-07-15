@@ -201,7 +201,7 @@ export const setup = (app: _express.Application) => {
 					.then(() => {
 						const modelPromises: _.Dictionary<Promise<void>> = _(data.models)
 							.filter(
-								model =>
+								(model): model is RequiredField<typeof model, 'apiRoot'> =>
 									(model.abstractSql != null || model.modelText != null) &&
 									model.apiRoot != null,
 							)
