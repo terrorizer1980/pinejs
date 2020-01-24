@@ -1,4 +1,14 @@
 - commits:
+    - subject: Import bluebird as Bluebird instead of Promise
+      hash: cfb9705159be123894643776649d6fccd752f782
+      body: ''
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Pagan Gazzard
+  version: 11.0.4
+  date: 2020-01-24T12:41:14.979Z
+- commits:
     - subject: Add CODEOWNERS
       hash: 836c5c7820761941f37b1d131c980b164c7df2a1
       body: ''
