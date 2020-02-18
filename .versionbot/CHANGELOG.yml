@@ -1,4 +1,14 @@
 - commits:
+    - subject: Fixes for resin-lint 3.x
+      hash: c09cdda18fd1eda81cb01187357d4a8a2b3712d9
+      body: ''
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Pagan Gazzard
+  version: 11.0.8
+  date: 2020-02-18T13:01:13.717Z
+- commits:
     - subject: Update dependencies
       hash: 3ca77681921503eca2f8c40438e2a644ac43ea09
       body: |
