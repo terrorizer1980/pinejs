@@ -1,4 +1,19 @@
 - commits:
+    - subject: Explain Pine's SBVR in docs/SBVR.md
+      hash: 9313b1e6e163428c7ecfef95e238eb1aa0a7a80e
+      body: |
+        - Explain SBVR as understood by Pine in more programmer-friendly
+          terms
+        - Map out how Pine interprets SBVR's structured english
+      footer:
+        Change-type: patch
+        change-type: patch
+        Signed-off-by: Carol Schulze <carol@balena.io>
+        signed-off-by: Carol Schulze <carol@balena.io>
+      author: Carol Schulze
+  version: 11.3.2
+  date: 2020-03-26T22:37:39.270Z
+- commits:
     - subject: Update dependencies
       hash: 6d807828c708226e95c97a95b580e1077cdae416
       body: |
