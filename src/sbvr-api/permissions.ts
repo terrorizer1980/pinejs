@@ -1206,6 +1206,16 @@ const getApiKeyPermissionsQuery = _.once(() =>
 																		},
 																	},
 																},
+																$or: [
+																	{
+																		khr: { expiry_date: null },
+																	},
+																	{
+																		khr: {
+																			expiry_date: { $gt: { $now: null } },
+																		},
+																	},
+																],
 															},
 														},
 													},
