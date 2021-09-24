@@ -1,4 +1,19 @@
 - commits:
+    - subject: Update request to query by affected ids once they've been resolved
+      hash: 22285cfe7fc8968f2e1e0f121f138eadcfa0e22c
+      body: |
+        This avoids the need to use a potentially costly filter twice, once to
+        get the affected ids in advance and then once when running the actual
+        PATCH/DELETE. This also guarantees there can never be an inconsistency
+        between the two
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Pagan Gazzard
+      nested: []
+  version: 14.31.0
+  date: 2021-09-24T13:39:46.403Z
+- commits:
     - subject: Update abstract-sql-compiler to 7.14.0
       hash: ca63647fec92eaf0ebd3df65a320b6db71765e4b
       body: |
