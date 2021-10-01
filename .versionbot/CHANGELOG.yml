@@ -1,4 +1,21 @@
 - commits:
+    - subject: Add support for $filter based /canAccess
+      hash: c042a8fd61667ae7d336005facf4fc82ed0ed256
+      body: ''
+      footer:
+        Change-type: minor
+        change-type: minor
+        See: >-
+          https://www.flowdock.com/app/rulemotion/resin-tech/threads/7WcMXnx1te1vhkaOtmQB2fU-0n8
+        see: >-
+          https://www.flowdock.com/app/rulemotion/resin-tech/threads/7WcMXnx1te1vhkaOtmQB2fU-0n8
+        Signed-off-by: Thodoris Greasidis <thodoris@balena.io>
+        signed-off-by: Thodoris Greasidis <thodoris@balena.io>
+      author: Thodoris Greasidis
+      nested: []
+  version: 14.32.0
+  date: 2021-10-01T13:20:45.911Z
+- commits:
     - subject: More usage of nullish coalescing
       hash: ef543e12309224e97b126b33d4c78521b2a883a9
       body: ''
